@@ -1,0 +1,156 @@
+name: distributed-computing-platform
+
+services:
+  gateway:
+    build: ./gateway
+    container_name: dc-gateway
+    environment:
+      JOB_PORT_START: 5000
+      JOB_PORT_END: 5099
+      WORKER_STALE_SECONDS: 15
+      HTTP_TIMEOUT_SECONDS: 15
+      REGISTRY_STATE_PATH: /data/registry.json
+      RECONCILE_INTERVAL_SECONDS: 5
+      LOG_LEVEL: info
+    volumes:
+      - gateway-state:/data
+    ports:
+      - "18080:8080"
+      - "5000-5099:5000-5099"
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  worker-1:
+    build: ./worker
+    container_name: dc-worker-1
+    environment:
+      WORKER_ID: worker-1
+      WORKER_ADDRESS: worker-1
+      WORKER_API_PORT: 9000
+      WORKER_CAPACITY: 10
+      GATEWAY_URL: http://gateway:8080
+      JOB_IMAGE: distributed-job-runner:latest
+      JOB_INTERNAL_PORT: 7001
+      DOCKER_NETWORK: distributed-compute-net
+      HEARTBEAT_INTERVAL_SECONDS: 5
+      LOG_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - gateway
+      - job-runner-image
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  worker-2:
+    build: ./worker
+    container_name: dc-worker-2
+    environment:
+      WORKER_ID: worker-2
+      WORKER_ADDRESS: worker-2
+      WORKER_API_PORT: 9000
+      WORKER_CAPACITY: 10
+      GATEWAY_URL: http://gateway:8080
+      JOB_IMAGE: distributed-job-runner:latest
+      JOB_INTERNAL_PORT: 7001
+      DOCKER_NETWORK: distributed-compute-net
+      HEARTBEAT_INTERVAL_SECONDS: 5
+      LOG_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - gateway
+      - job-runner-image
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  worker-3:
+    build: ./worker
+    container_name: dc-worker-3
+    environment:
+      WORKER_ID: worker-3
+      WORKER_ADDRESS: worker-3
+      WORKER_API_PORT: 9000
+      WORKER_CAPACITY: 10
+      GATEWAY_URL: http://gateway:8080
+      JOB_IMAGE: distributed-job-runner:latest
+      JOB_INTERNAL_PORT: 7001
+      DOCKER_NETWORK: distributed-compute-net
+      HEARTBEAT_INTERVAL_SECONDS: 5
+      LOG_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - gateway
+      - job-runner-image
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  job-runner-image:
+    build: ./job-runner
+    image: distributed-job-runner:latest
+    container_name: dc-job-runner-image-holder
+    command: ["python", "-c", "import time; print('job-runner image is ready'); time.sleep(365*24*60*60)"]
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: dc-frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - gateway
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: dc-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    ports:
+      - "9090:9090"
+    depends_on:
+      - gateway
+      - worker-1
+      - worker-2
+      - worker-3
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: dc-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - compute-net
+    restart: unless-stopped
+
+networks:
+  compute-net:
+    name: distributed-compute-net
+    driver: bridge
+
+volumes:
+  gateway-state:
